@@ -1,0 +1,20 @@
+[package]
+name = "debouncerd"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.37", features = ["derive"] }
+dbus = "0.9.7"
+dbus-crossroads = "0.5.2"
+shell-words = "1.1.0"
+thiserror = "2.0.12"
+xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
+
+[[bin]]
+name = "debouncerd"
+path = "src/bin/daemon.rs"
+
+[[bin]]
+name = "debouncerctl"
+path = "src/bin/client.rs"
