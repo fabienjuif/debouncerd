@@ -1,7 +1,8 @@
 use clap::Parser;
 // inspiration from: https://github.com/diwic/dbus-rs/tree/master?tab=readme-ov-file#client
 use dbus::blocking::Connection;
-use std::{env, time::Duration};
+use debouncerd::{DEBOUNCE_CMD_METHOD, DEBOUNCE_METHOD, DEST, DebounceCmdOptions, DebounceOptions};
+use std::{env, process::Command, time::Duration};
 use xxhash_rust::xxh3::xxh3_64;
 
 // TODO: share some constant&struct in src/lib with daemon
@@ -31,33 +32,34 @@ struct Args {
     /// Optional present working directory to run the command from
     #[arg(long, default_value_t = default_pwd())]
     pwd: String,
-}
 
-#[derive(Debug)]
-struct Options {
-    timeout: u64,
-    cmd: String,
-    id: String,
-    pwd: String,
-}
-
-impl Options {
-    fn into_tuple(self) -> (String, u64, String, String) {
-        (self.id, self.timeout, self.pwd, self.cmd)
-    }
+    /// Optional flag to run the command in the background (in the daemon).
+    #[arg(short, long)]
+    background: bool,
 }
 
 impl Args {
-    fn with_defaults(self) -> Options {
+    fn as_debounce_opts(&self) -> DebounceOptions {
         let id = self
             .id
+            .clone()
             .unwrap_or_else(|| format!("{:016x}", xxh3_64(self.cmd.as_bytes())));
 
-        Options {
-            timeout: self.timeout,
-            cmd: self.cmd,
+        DebounceOptions {
+            timeout: Duration::from_millis(self.timeout),
             id,
-            pwd: self.pwd,
+        }
+    }
+
+    fn as_debounce_cmd_opts(&self) -> DebounceCmdOptions {
+        DebounceCmdOptions {
+            timeout: Duration::from_millis(self.timeout),
+            cmd: self.cmd.clone(),
+            id: self
+                .id
+                .clone()
+                .unwrap_or_else(|| format!("{:016x}", xxh3_64(self.cmd.as_bytes()))),
+            pwd: self.pwd.clone(),
         }
     }
 }
@@ -65,19 +67,30 @@ impl Args {
 // dbus-send --print-reply --dest=com.example.dbustest / com.example.dbustest.Debounce string:MyName uint64:2000 string:$(pwd) string:'ls -al'
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let options = Args::parse().with_defaults();
-    println!("{:?}", options);
+    let args = Args::parse();
+    let opts = args.as_debounce_opts();
+    println!("{:?}", opts);
 
     let conn = Connection::new_session()?;
-    let proxy = conn.with_proxy("com.example.dbustest", "/", Duration::from_millis(5000));
+    let proxy = conn.with_proxy(DEST, "/", Duration::from_millis(5000));
 
-    let (executed, timeout): (bool, u64) =
-        proxy.method_call("com.example.dbustest", "Debounce", options.into_tuple())?;
-
-    if executed {
-        println!("executed!")
+    let result: (bool, u64) = if args.background {
+        let opts = args.as_debounce_cmd_opts();
+        proxy.method_call(DEST, DEBOUNCE_CMD_METHOD, opts.into_tuple())?
     } else {
-        println!("timeout: {}ms", timeout)
+        let opts = args.as_debounce_opts();
+        proxy.method_call(DEST, DEBOUNCE_METHOD, opts.into_tuple())?
+    };
+
+    if result.0 && !args.background {
+        let s = shell_words::split(&args.cmd)?;
+        Command::new(&s[0])
+            .current_dir(args.pwd)
+            .args(&s[1..])
+            .spawn()?
+            .wait()?;
+    } else {
+        println!("timeout: {}ms", result.1)
     }
 
     Ok(())
