@@ -1,7 +1,7 @@
 // inspiration from: https://github.com/diwic/dbus-rs/blob/master/dbus-crossroads/examples/server_cr.rs
 use dbus::{MethodErr, blocking::Connection};
 use dbus_crossroads::{Context, Crossroads};
-use debouncerd::{MAX_ENTRIES, MAX_TIMEOUT_MS};
+use debouncerd::{DEBOUNCE_METHOD, DEST, DebounceOptions, MAX_ENTRIES, MAX_TIMEOUT_MS};
 use std::{
     collections::HashMap,
     error::Error,
@@ -32,27 +32,21 @@ enum TryRunError {
 
 impl Debouncer {
     #[allow(clippy::zombie_processes)]
-    fn run(&mut self, id: &str, pwd: &str, cmd: &str) {
-        println!("exec {}", cmd);
+    fn run(&mut self, opts: &DebounceOptions) {
+        println!("exec {}", opts.cmd);
         // TODO: better error handling here
-        let s = shell_words::split(cmd).expect("parsing");
+        let s = shell_words::split(&opts.cmd).expect("parsing");
         // TODO: put the result into logger deamon?
         // TODO: or at least spawn it in a thread and follow exec but do not block the "main" thread.
         Command::new(&s[0])
-            .current_dir(pwd)
+            .current_dir(&opts.pwd)
             .args(&s[1..])
             .spawn()
             .expect("oups");
-        self.timers.insert(id.into(), Instant::now());
+        self.timers.insert(opts.id.clone(), Instant::now());
     }
 
-    fn try_run(
-        &mut self,
-        id: &str,
-        timeout: Duration,
-        pwd: &str,
-        cmd: &str,
-    ) -> Result<Option<Duration>, TryRunError> {
+    fn try_run(&mut self, opts: &DebounceOptions) -> Result<Option<Duration>, TryRunError> {
         if self.timers.len() > GC_ITEMS {
             let expired_ids: Vec<_> = self
                 .timers
@@ -74,48 +68,52 @@ impl Debouncer {
         if self.timers.len() > MAX_ENTRIES {
             return Err(TryRunError::TooManyEntries);
         }
-        if timeout > Duration::from_millis(MAX_TIMEOUT_MS) {
+        if opts.timeout > Duration::from_millis(MAX_TIMEOUT_MS) {
             return Err(TryRunError::TimeoutTooLong);
         }
-        let Some(timer) = self.timers.get(id) else {
-            self.run(id, pwd, cmd);
+        let Some(timer) = self.timers.get(&opts.id) else {
+            self.run(opts);
             return Ok(None);
         };
 
         let elapsed = timer.elapsed();
-        if elapsed < timeout {
-            return Ok(Some(timeout - elapsed));
+        if elapsed < opts.timeout {
+            return Ok(Some(opts.timeout - elapsed));
         }
 
-        self.run(id, pwd, cmd);
+        self.run(opts);
         Ok(None)
     }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let c = Connection::new_session()?;
-    c.request_name("com.example.dbustest", false, true, false)?;
+    c.request_name(DEST, false, true, false)?;
 
     let mut cr = Crossroads::new();
 
     // TODO: add the "cron" method
     // TODO: add the "list" method -> returning state of debounces/cron/etc
-    let iface_token = cr.register("com.example.dbustest", |b| {
+    let iface_token = cr.register(DEST, |b| {
         b.method(
-            "Debounce",
+            DEBOUNCE_METHOD,
             ("id", "duration_ms", "pwd", "cmd"),
             ("executed", "timeout"),
             move |_: &mut Context,
                   debouncer: &mut Debouncer,
-                  (id, duration_ms, pwd, cmd): (String, u64, String, String)| {
-                match debouncer.try_run(&id, Duration::from_millis(duration_ms), &pwd, &cmd) {
+                  params: (String, u64, String, String)| {
+                let opts = DebounceOptions::from_tuple(params);
+                match debouncer.try_run(&opts) {
                     Ok(res) => {
                         let executed = res.is_none();
                         let timeout: u64 = (res.unwrap_or(Duration::ZERO).as_millis())
                             .try_into()
                             .expect("timeout should fit into a u64");
 
-                        println!("{} - executed: {} - timeout: {}", cmd, executed, timeout);
+                        println!(
+                            "{} - executed: {} - timeout: {}",
+                            opts.cmd, executed, timeout
+                        );
 
                         Ok((executed, timeout))
                     }

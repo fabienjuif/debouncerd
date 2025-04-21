@@ -1,6 +1,7 @@
 use clap::Parser;
 // inspiration from: https://github.com/diwic/dbus-rs/tree/master?tab=readme-ov-file#client
 use dbus::blocking::Connection;
+use debouncerd::{DEBOUNCE_METHOD, DEST, DebounceOptions};
 use std::{env, time::Duration};
 use xxhash_rust::xxh3::xxh3_64;
 
@@ -33,28 +34,14 @@ struct Args {
     pwd: String,
 }
 
-#[derive(Debug)]
-struct Options {
-    timeout: u64,
-    cmd: String,
-    id: String,
-    pwd: String,
-}
-
-impl Options {
-    fn into_tuple(self) -> (String, u64, String, String) {
-        (self.id, self.timeout, self.pwd, self.cmd)
-    }
-}
-
 impl Args {
-    fn with_defaults(self) -> Options {
+    fn with_defaults(self) -> DebounceOptions {
         let id = self
             .id
             .unwrap_or_else(|| format!("{:016x}", xxh3_64(self.cmd.as_bytes())));
 
-        Options {
-            timeout: self.timeout,
+        DebounceOptions {
+            timeout: Duration::from_millis(self.timeout),
             cmd: self.cmd,
             id,
             pwd: self.pwd,
@@ -69,10 +56,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{:?}", options);
 
     let conn = Connection::new_session()?;
-    let proxy = conn.with_proxy("com.example.dbustest", "/", Duration::from_millis(5000));
+    let proxy = conn.with_proxy(DEST, "/", Duration::from_millis(5000));
 
     let (executed, timeout): (bool, u64) =
-        proxy.method_call("com.example.dbustest", "Debounce", options.into_tuple())?;
+        proxy.method_call(DEST, DEBOUNCE_METHOD, options.into_tuple())?;
 
     if executed {
         println!("executed!")
