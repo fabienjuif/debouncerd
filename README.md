@@ -11,10 +11,16 @@
 
 ## Installation
 
+### With cargo
+
 ```bash
 git clone git@github.com:fabienjuif/debouncerd.git
 cargo install --path ./debouncerd
 ```
+
+### On Void Linux
+
+You can find a custom [template here.](https://github.com/fabienjuif/void-packages/pull/2)
 
 ## Usage
 
