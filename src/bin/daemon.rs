@@ -1,7 +1,9 @@
 // inspiration from: https://github.com/diwic/dbus-rs/blob/master/dbus-crossroads/examples/server_cr.rs
 use dbus::{MethodErr, blocking::Connection};
 use dbus_crossroads::{Context, Crossroads};
-use debouncerd::{DEBOUNCE_CMD_METHOD, DEST, DebounceCmdOptions, MAX_ENTRIES, MAX_TIMEOUT_MS};
+use debouncerd::{
+    DebounceCmdOptions, DebounceOptions, DEBOUNCE_CMD_METHOD, DEBOUNCE_CMD_METHOD_INPUTS, DEBOUNCE_CMD_METHOD_OUTPUTS, DEBOUNCE_METHOD, DEBOUNCE_METHOD_INPUTS, DEBOUNCE_METHOD_OUTPUTS, DEST, MAX_ENTRIES, MAX_TIMEOUT_MS
+};
 use std::{
     collections::HashMap,
     error::Error,
@@ -43,10 +45,9 @@ impl Debouncer {
             .args(&s[1..])
             .spawn()
             .expect("oups");
-        self.timers.insert(opts.id.clone(), Instant::now());
     }
 
-    fn try_run(&mut self, opts: &DebounceCmdOptions) -> Result<Option<Duration>, TryRunError> {
+    fn check(&mut self, id: &str, timeout: Duration) -> Result<Option<Duration>, TryRunError> {
         if self.timers.len() > GC_ITEMS {
             let expired_ids: Vec<_> = self
                 .timers
@@ -68,20 +69,20 @@ impl Debouncer {
         if self.timers.len() > MAX_ENTRIES {
             return Err(TryRunError::TooManyEntries);
         }
-        if opts.timeout > Duration::from_millis(MAX_TIMEOUT_MS) {
+        if timeout > Duration::from_millis(MAX_TIMEOUT_MS) {
             return Err(TryRunError::TimeoutTooLong);
         }
-        let Some(timer) = self.timers.get(&opts.id) else {
-            self.run_cmd(opts);
+        let Some(timer) = self.timers.get(id) else {
+            self.timers.insert(id.to_string(), Instant::now());
             return Ok(None);
         };
 
         let elapsed = timer.elapsed();
-        if elapsed < opts.timeout {
-            return Ok(Some(opts.timeout - elapsed));
+        if elapsed < timeout {
+            return Ok(Some(timeout - elapsed));
         }
 
-        self.run_cmd(opts);
+        self.timers.insert(id.to_string(), Instant::now());
         Ok(None)
     }
 }
@@ -97,15 +98,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     let iface_token = cr.register(DEST, |b| {
         b.method(
             DEBOUNCE_CMD_METHOD,
-            DebounceCmdOptions::input_args(),
-            ("executed", "timeout"),
+            DEBOUNCE_CMD_METHOD_INPUTS,
+            DEBOUNCE_CMD_METHOD_OUTPUTS,
             move |_: &mut Context,
                   debouncer: &mut Debouncer,
                   params: (String, u64, String, String)| {
                 let opts = DebounceCmdOptions::from_tuple(params);
-                match debouncer.try_run(&opts) {
+                match debouncer.check(&opts.id, opts.timeout) {
                     Ok(res) => {
                         let executed = res.is_none();
+                        
+                        if executed {
+                            debouncer.run_cmd(&opts);
+                        }
+
                         let timeout: u64 = (res.unwrap_or(Duration::ZERO).as_millis())
                             .try_into()
                             .expect("timeout should fit into a u64");
@@ -116,6 +122,31 @@ fn main() -> Result<(), Box<dyn Error>> {
                         );
 
                         Ok((executed, timeout))
+                    }
+                    Err(e) => {
+                        eprintln!("try_run error: {}", e);
+                        Err(MethodErr::failed(&e.to_string()))
+                    }
+                }
+            },
+        );
+
+        b.method(
+            DEBOUNCE_METHOD,
+            DEBOUNCE_METHOD_INPUTS,
+            DEBOUNCE_METHOD_OUTPUTS,
+            move |_: &mut Context,
+                  debouncer: &mut Debouncer,
+                  params: (String, u64)| {
+                let opts = DebounceOptions::from_tuple(params);
+                match debouncer.check(&opts.id, opts.timeout) {
+                    Ok(res) => {
+                        let flag = res.is_none();
+                        let timeout: u64 = (res.unwrap_or(Duration::ZERO).as_millis())
+                            .try_into()
+                            .expect("timeout should fit into a u64");
+
+                        Ok((flag, timeout))
                     }
                     Err(e) => {
                         eprintln!("try_run error: {}", e);

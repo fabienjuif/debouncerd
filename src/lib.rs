@@ -9,6 +9,12 @@ pub const MAX_ENTRIES: usize = 1_000_000;
 pub const DEST: &str = "com.github.fabienjuif.debouncerd";
 
 pub const DEBOUNCE_CMD_METHOD: &str = "DebounceCmd";
+pub const DEBOUNCE_CMD_METHOD_INPUTS: (&str, &str, &str, &str) = ("id", "timeout", "pwd", "cmd");
+pub const DEBOUNCE_CMD_METHOD_OUTPUTS: (&str, &str) = ("executed", "timeout");
+
+pub const DEBOUNCE_METHOD: &str = "Debounce";
+pub const DEBOUNCE_METHOD_INPUTS: (&str, &str) = ("id", "timeout");
+pub const DEBOUNCE_METHOD_OUTPUTS: (&str, &str) = ("flag", "timeout");
 
 #[derive(Debug)]
 pub struct DebounceCmdOptions {
@@ -19,10 +25,6 @@ pub struct DebounceCmdOptions {
 }
 
 impl DebounceCmdOptions {
-    pub fn input_args() -> (&'static str, &'static str, &'static str, &'static str) {
-        ("id", "timeout", "pwd", "cmd")
-    }
-
     pub fn into_tuple(self) -> (String, u64, String, String) {
         (
             self.id,
@@ -41,6 +43,30 @@ impl DebounceCmdOptions {
             cmd,
             id,
             pwd,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct DebounceOptions {
+    pub timeout: Duration,
+    pub id: String,
+}
+impl DebounceOptions {
+    pub fn into_tuple(self) -> (String, u64) {
+        (
+            self.id,
+            self.timeout
+                .as_millis()
+                .try_into()
+                .expect("timeout should fit into u64"),
+        )
+    }
+
+    pub fn from_tuple((id, timeout): (String, u64)) -> Self {
+        Self {
+            timeout: Duration::from_millis(timeout),
+            id,
         }
     }
 }

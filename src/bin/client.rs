@@ -1,8 +1,9 @@
 use clap::Parser;
 // inspiration from: https://github.com/diwic/dbus-rs/tree/master?tab=readme-ov-file#client
 use dbus::blocking::Connection;
-use debouncerd::{DEBOUNCE_CMD_METHOD, DEST, DebounceCmdOptions};
-use std::{env, time::Duration};
+use debouncerd::{DebounceCmdOptions, DebounceOptions, DEBOUNCE_CMD_METHOD, DEBOUNCE_METHOD, DEST};
+use core::time;
+use std::{env, process::Command, result, time::Duration};
 use xxhash_rust::xxh3::xxh3_64;
 
 // TODO: share some constant&struct in src/lib with daemon
@@ -32,19 +33,31 @@ struct Args {
     /// Optional present working directory to run the command from
     #[arg(long, default_value_t = default_pwd())]
     pwd: String,
+
+    /// Optional flag to run the command in the background (in the daemon).
+    #[arg(short, long)]
+    background: bool,
 }
 
 impl Args {
-    fn with_defaults(self) -> DebounceCmdOptions {
+    fn as_debounce_opts(&self) -> DebounceOptions {
         let id = self
             .id
+            .clone()
             .unwrap_or_else(|| format!("{:016x}", xxh3_64(self.cmd.as_bytes())));
 
+        DebounceOptions {
+            timeout: Duration::from_millis(self.timeout),
+            id,
+        }
+    }
+
+    fn as_debounce_cmd_opts(&self) -> DebounceCmdOptions {
         DebounceCmdOptions {
             timeout: Duration::from_millis(self.timeout),
-            cmd: self.cmd,
-            id,
-            pwd: self.pwd,
+            cmd: self.cmd.clone(),
+            id: self.id.clone().unwrap_or_else(|| format!("{:016x}", xxh3_64(self.cmd.as_bytes()))),
+            pwd: self.pwd.clone(),
         }
     }
 }
@@ -52,19 +65,31 @@ impl Args {
 // dbus-send --print-reply --dest=com.example.dbustest / com.example.dbustest.Debounce string:MyName uint64:2000 string:$(pwd) string:'ls -al'
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let options = Args::parse().with_defaults();
-    println!("{:?}", options);
+    let args = Args::parse();
+    let opts = args.as_debounce_opts();
+    println!("{:?}", opts);
 
     let conn = Connection::new_session()?;
     let proxy = conn.with_proxy(DEST, "/", Duration::from_millis(5000));
 
-    let (executed, timeout): (bool, u64) =
-        proxy.method_call(DEST, DEBOUNCE_CMD_METHOD, options.into_tuple())?;
-
-    if executed {
-        println!("executed!")
+    let result: (bool, u64);
+    if args.background {
+        let opts = args.as_debounce_cmd_opts();
+        result = proxy.method_call(DEST, DEBOUNCE_CMD_METHOD, opts.into_tuple())?;
     } else {
-        println!("timeout: {}ms", timeout)
+        let opts = args.as_debounce_opts();
+        result = proxy.method_call(DEST, DEBOUNCE_METHOD, opts.into_tuple())?;
+    }
+
+    if result.0 {
+        let s = shell_words::split(&args.cmd)?;
+        Command::new(&s[0])
+            .current_dir(args.pwd)
+            .args(&s[1..])
+            .spawn()?
+            .wait()?;
+    } else {
+        println!("timeout: {}ms", result.1)
     }
 
     Ok(())
