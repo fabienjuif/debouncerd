@@ -2,7 +2,9 @@
 use dbus::{MethodErr, blocking::Connection};
 use dbus_crossroads::{Context, Crossroads};
 use debouncerd::{
-    DebounceCmdOptions, DebounceOptions, DEBOUNCE_CMD_METHOD, DEBOUNCE_CMD_METHOD_INPUTS, DEBOUNCE_CMD_METHOD_OUTPUTS, DEBOUNCE_METHOD, DEBOUNCE_METHOD_INPUTS, DEBOUNCE_METHOD_OUTPUTS, DEST, MAX_ENTRIES, MAX_TIMEOUT_MS
+    DEBOUNCE_CMD_METHOD, DEBOUNCE_CMD_METHOD_INPUTS, DEBOUNCE_CMD_METHOD_OUTPUTS, DEBOUNCE_METHOD,
+    DEBOUNCE_METHOD_INPUTS, DEBOUNCE_METHOD_OUTPUTS, DEST, DebounceCmdOptions, DebounceOptions,
+    MAX_ENTRIES, MAX_TIMEOUT_MS,
 };
 use std::{
     collections::HashMap,
@@ -107,7 +109,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 match debouncer.check(&opts.id, opts.timeout) {
                     Ok(res) => {
                         let executed = res.is_none();
-                        
+
                         if executed {
                             debouncer.run_cmd(&opts);
                         }
@@ -135,9 +137,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             DEBOUNCE_METHOD,
             DEBOUNCE_METHOD_INPUTS,
             DEBOUNCE_METHOD_OUTPUTS,
-            move |_: &mut Context,
-                  debouncer: &mut Debouncer,
-                  params: (String, u64)| {
+            move |_: &mut Context, debouncer: &mut Debouncer, params: (String, u64)| {
                 let opts = DebounceOptions::from_tuple(params);
                 match debouncer.check(&opts.id, opts.timeout) {
                     Ok(res) => {

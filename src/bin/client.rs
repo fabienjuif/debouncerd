@@ -1,9 +1,8 @@
 use clap::Parser;
 // inspiration from: https://github.com/diwic/dbus-rs/tree/master?tab=readme-ov-file#client
 use dbus::blocking::Connection;
-use debouncerd::{DebounceCmdOptions, DebounceOptions, DEBOUNCE_CMD_METHOD, DEBOUNCE_METHOD, DEST};
-use core::time;
-use std::{env, process::Command, result, time::Duration};
+use debouncerd::{DEBOUNCE_CMD_METHOD, DEBOUNCE_METHOD, DEST, DebounceCmdOptions, DebounceOptions};
+use std::{env, process::Command, time::Duration};
 use xxhash_rust::xxh3::xxh3_64;
 
 // TODO: share some constant&struct in src/lib with daemon
@@ -56,7 +55,10 @@ impl Args {
         DebounceCmdOptions {
             timeout: Duration::from_millis(self.timeout),
             cmd: self.cmd.clone(),
-            id: self.id.clone().unwrap_or_else(|| format!("{:016x}", xxh3_64(self.cmd.as_bytes()))),
+            id: self
+                .id
+                .clone()
+                .unwrap_or_else(|| format!("{:016x}", xxh3_64(self.cmd.as_bytes()))),
             pwd: self.pwd.clone(),
         }
     }
@@ -72,14 +74,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let conn = Connection::new_session()?;
     let proxy = conn.with_proxy(DEST, "/", Duration::from_millis(5000));
 
-    let result: (bool, u64);
-    if args.background {
+    let result: (bool, u64) = if args.background {
         let opts = args.as_debounce_cmd_opts();
-        result = proxy.method_call(DEST, DEBOUNCE_CMD_METHOD, opts.into_tuple())?;
+        proxy.method_call(DEST, DEBOUNCE_CMD_METHOD, opts.into_tuple())?
     } else {
         let opts = args.as_debounce_opts();
-        result = proxy.method_call(DEST, DEBOUNCE_METHOD, opts.into_tuple())?;
-    }
+        proxy.method_call(DEST, DEBOUNCE_METHOD, opts.into_tuple())?
+    };
 
     if result.0 {
         let s = shell_words::split(&args.cmd)?;
