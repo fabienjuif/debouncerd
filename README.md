@@ -42,10 +42,11 @@ Arguments:
   <CMD>      Command to execute
 
 Options:
-      --id <ID>    Optional identifier for the debounce group (useful for distinguishing runs)
-      --pwd <PWD>  Optional present working directory to run the command from [default: /home/fabien/perso/debouncerd]
-  -h, --help       Print help
-  -V, --version    Print version
+      --id <ID>     Optional identifier for the debounce group (useful for distinguishing runs)
+      --pwd <PWD>   Optional present working directory to run the command from [default: /home/fabien/perso/dbus-debounce]
+  -b, --background  Optional flag to run the command in the background (in the daemon)
+  -h, --help        Print help
+  -V, --version     Print version
 ```
 
 #### Example
