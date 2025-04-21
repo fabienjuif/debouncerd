@@ -6,19 +6,23 @@ pub const MAX_TIMEOUT_MS: u64 = 1000 * 60 * 60 * 24; // 1 day
 // TODO: use clap to override this in the daemon
 pub const MAX_ENTRIES: usize = 1_000_000;
 
-pub const DEST: &str = "com.example.dbustest";
+pub const DEST: &str = "com.github.fabienjuif.debouncerd";
 
-pub const DEBOUNCE_METHOD: &str = "Debounce";
+pub const DEBOUNCE_CMD_METHOD: &str = "DebounceCmd";
 
 #[derive(Debug)]
-pub struct DebounceOptions {
+pub struct DebounceCmdOptions {
     pub timeout: Duration,
     pub cmd: String,
     pub id: String,
     pub pwd: String,
 }
 
-impl DebounceOptions {
+impl DebounceCmdOptions {
+    pub fn input_args() -> (&'static str, &'static str, &'static str, &'static str) {
+        ("id", "timeout", "pwd", "cmd")
+    }
+
     pub fn into_tuple(self) -> (String, u64, String, String) {
         (
             self.id,

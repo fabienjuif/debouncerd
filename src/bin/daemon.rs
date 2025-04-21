@@ -1,7 +1,7 @@
 // inspiration from: https://github.com/diwic/dbus-rs/blob/master/dbus-crossroads/examples/server_cr.rs
 use dbus::{MethodErr, blocking::Connection};
 use dbus_crossroads::{Context, Crossroads};
-use debouncerd::{DEBOUNCE_METHOD, DEST, DebounceOptions, MAX_ENTRIES, MAX_TIMEOUT_MS};
+use debouncerd::{DEBOUNCE_CMD_METHOD, DEST, DebounceCmdOptions, MAX_ENTRIES, MAX_TIMEOUT_MS};
 use std::{
     collections::HashMap,
     error::Error,
@@ -32,7 +32,7 @@ enum TryRunError {
 
 impl Debouncer {
     #[allow(clippy::zombie_processes)]
-    fn run(&mut self, opts: &DebounceOptions) {
+    fn run_cmd(&mut self, opts: &DebounceCmdOptions) {
         println!("exec {}", opts.cmd);
         // TODO: better error handling here
         let s = shell_words::split(&opts.cmd).expect("parsing");
@@ -46,7 +46,7 @@ impl Debouncer {
         self.timers.insert(opts.id.clone(), Instant::now());
     }
 
-    fn try_run(&mut self, opts: &DebounceOptions) -> Result<Option<Duration>, TryRunError> {
+    fn try_run(&mut self, opts: &DebounceCmdOptions) -> Result<Option<Duration>, TryRunError> {
         if self.timers.len() > GC_ITEMS {
             let expired_ids: Vec<_> = self
                 .timers
@@ -72,7 +72,7 @@ impl Debouncer {
             return Err(TryRunError::TimeoutTooLong);
         }
         let Some(timer) = self.timers.get(&opts.id) else {
-            self.run(opts);
+            self.run_cmd(opts);
             return Ok(None);
         };
 
@@ -81,7 +81,7 @@ impl Debouncer {
             return Ok(Some(opts.timeout - elapsed));
         }
 
-        self.run(opts);
+        self.run_cmd(opts);
         Ok(None)
     }
 }
@@ -96,13 +96,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     // TODO: add the "list" method -> returning state of debounces/cron/etc
     let iface_token = cr.register(DEST, |b| {
         b.method(
-            DEBOUNCE_METHOD,
-            ("id", "duration_ms", "pwd", "cmd"),
+            DEBOUNCE_CMD_METHOD,
+            DebounceCmdOptions::input_args(),
             ("executed", "timeout"),
             move |_: &mut Context,
                   debouncer: &mut Debouncer,
                   params: (String, u64, String, String)| {
-                let opts = DebounceOptions::from_tuple(params);
+                let opts = DebounceCmdOptions::from_tuple(params);
                 match debouncer.try_run(&opts) {
                     Ok(res) => {
                         let executed = res.is_none();

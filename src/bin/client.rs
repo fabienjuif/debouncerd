@@ -1,7 +1,7 @@
 use clap::Parser;
 // inspiration from: https://github.com/diwic/dbus-rs/tree/master?tab=readme-ov-file#client
 use dbus::blocking::Connection;
-use debouncerd::{DEBOUNCE_METHOD, DEST, DebounceOptions};
+use debouncerd::{DEBOUNCE_CMD_METHOD, DEST, DebounceCmdOptions};
 use std::{env, time::Duration};
 use xxhash_rust::xxh3::xxh3_64;
 
@@ -35,12 +35,12 @@ struct Args {
 }
 
 impl Args {
-    fn with_defaults(self) -> DebounceOptions {
+    fn with_defaults(self) -> DebounceCmdOptions {
         let id = self
             .id
             .unwrap_or_else(|| format!("{:016x}", xxh3_64(self.cmd.as_bytes())));
 
-        DebounceOptions {
+        DebounceCmdOptions {
             timeout: Duration::from_millis(self.timeout),
             cmd: self.cmd,
             id,
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proxy = conn.with_proxy(DEST, "/", Duration::from_millis(5000));
 
     let (executed, timeout): (bool, u64) =
-        proxy.method_call(DEST, DEBOUNCE_METHOD, options.into_tuple())?;
+        proxy.method_call(DEST, DEBOUNCE_CMD_METHOD, options.into_tuple())?;
 
     if executed {
         println!("executed!")
