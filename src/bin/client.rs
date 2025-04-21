@@ -82,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         proxy.method_call(DEST, DEBOUNCE_METHOD, opts.into_tuple())?
     };
 
-    if result.0 {
+    if result.0 && !args.background {
         let s = shell_words::split(&args.cmd)?;
         Command::new(&s[0])
             .current_dir(args.pwd)
